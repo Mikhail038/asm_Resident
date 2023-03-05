@@ -1,0 +1,619 @@
+;========================================================================================
+;Draw Rectangle
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si], color in ShdClr
+;Parameters:	ax - X. dx - Y. cx - width. bx - high. si - ascii
+;Returns:	-
+;Destroys:	si, di, ax, dx, bx
+;----------------------------------------------------------------------------------------
+DrawRect	proc
+
+		call CoordShift
+
+                mov ah, ShdClr  ;set color
+
+@@Loop:
+		call PutLine
+		dec si		;restore  symbol
+
+		dec bx
+		cmp bx, 0
+		jne @@Loop
+
+		ret
+DrawRect	endp
+
+
+;========================================================================================
+;Draw Shadow
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si]
+;Parameters:	ax - X. dx - Y. cx - width. bx - high. si - ascii + color
+;Returns:	-
+;Destroys:	si, di, ax, dx, bx
+;----------------------------------------------------------------------------------------
+DrawShadow	proc
+
+		push si       ;save style
+
+		mov si, offset ShadowS      ;set shadow style
+
+                push ax
+                push dx
+                push bx
+                push cx
+
+                add ax, 2            ;x, y shift
+                add dx, 1            ;for shadow
+
+                call DrawRect        ;doing shadow
+
+                pop cx
+                pop bx
+                pop dx
+                pop ax
+
+		pop si		;restore style
+
+		ret
+DrawShadow	endp
+
+;========================================================================================
+;Draw Frame
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si], color in BoxClr
+;Parameters:	ax - X. dx - Y. cx - width. bx - high. si - ascii + color
+;Returns:	-
+;Destroys:	si, di, ax, dx, bx
+;----------------------------------------------------------------------------------------
+
+DrawFrame proc
+
+                cmp cx, 2
+                ja @@NoHelpCx
+
+                mov cx, 2                      ;cx <- 2 if cx < 2
+@@NoHelpCx:
+
+                cmp bx, 2
+                ja @@NoHelpBx
+
+                mov bx, 2                      ;bx <- 3 if bx < 3
+@@NoHelpBx:
+
+		call DrawShadow
+
+		call CoordShift
+
+		mov ah, BoxClr	;color
+
+                push di         ;save it for text
+
+		call PutBoxLine	;up line
+
+		sub bx, 2	;skip up and down lines
+
+                cmp bx, 0
+                je @@Skip       ;if no middle line
+
+@@Loop:
+		call PutBoxLine
+		sub si, 3	;restore middle symbols
+
+		dec bx
+		cmp bx, 0
+		jne @@Loop
+
+@@Skip:
+		add si, 3	;set end symbols
+
+		call PutBoxLine ;down line
+
+                ;frame and shadow is drown now we'll print text
+                pop di          ;restore di
+
+                add di, 4       ;skip border and one more space
+                add di, 160d
+
+                ;call NewLine    ;we`ll skip first two rows
+                ;destination is set
+
+                mov si, offset Message
+                ;source is set
+
+@@Cycle:
+                cmp byte ptr ds:[si], '@'       ;newline symbol
+                je @@NewL
+
+                movsb           ;draw letter
+
+                inc di          ;skip color
+
+@@Fin:
+                cmp byte ptr ds:[si], 00h
+                jne @@Cycle
+
+		ret
+
+
+@@NewL:
+                call EnterVR
+                add di, DefX
+                add di, DefX
+
+                add di, 4
+
+                inc si
+
+                jmp @@Fin
+
+DrawFrame endp
+
+
+;========================================================================================
+;Coord to shift
+;----------------------------------------------------------------------------------------
+;Expect:
+;Parameters:	ax - X, dx - Y
+;Returns:	di - shift
+;Destroys:	di, ax, dx
+;----------------------------------------------------------------------------------------
+
+CoordShift	proc
+
+		shl ax, 1	;double X cause of [ascii][color]
+
+		mov di, ax	;di will be ptr
+
+		mov al, dl	;al = y (dh is not interst)
+		mov dh, 80d	;dh = screen width
+		mul dh		;ax = y * screen width
+		shl ax, 1	;double
+
+		add di, ax
+
+		ret
+CoordShift	endp
+
+;========================================================================================
+;Begin New Line in VRAM (only for box)
+;----------------------------------------------------------------------------------------
+;Expect:        es = 0B800, di
+;Parameters:
+;Returns:
+;Destroys:	di, bx
+;----------------------------------------------------------------------------------------
+
+NewLine         proc
+
+		add di, 160d
+
+		sub di, cx
+		sub di, cx
+
+		ret
+
+NewLine         endp
+
+;========================================================================================
+;Put Line
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si], ah - color, cx - width
+;Parameters:	si - ptr to array of box-symbols
+;Returns:	-
+;Destroys:	si, di
+;----------------------------------------------------------------------------------------
+PutLine		proc
+
+		lodsb
+
+		push cx
+
+		rep stosw
+
+		pop cx
+
+		call NewLine
+
+		ret
+PutLine		endp
+
+;========================================================================================
+;Put Box Line
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si], ah - color, cx - width
+;Parameters:	si - ptr to array of box-symbols
+;Returns:	-
+;Destroys:	si, di
+;----------------------------------------------------------------------------------------
+
+PutBoxLine	proc
+
+		lodsb				;from ds:[si] ascii of 1 -> al
+		stosw
+
+		lodsb				;ascii of 2 -> al
+
+		push cx				;save cx
+
+                sub cx, 2
+		rep stosw			;cycle (ax -> VRAM)
+
+		pop cx				;restore cx
+
+		lodsb				;ascii of 3 -> al
+		stosw
+
+		call NewLine
+
+		ret
+PutBoxLine	endp
+
+;========================================================================================
+;Space in VRAM
+;----------------------------------------------------------------------------------------
+;Expect:        es = 0B800
+;Parameters:	di - shift from ds
+;Returns:
+;Destroys:	di, al
+;----------------------------------------------------------------------------------------
+
+Space           proc
+
+                mov al, ' '             ;ascii
+                stosb
+                mov al, 07              ;color
+                stosb
+
+                ret
+Space           endp
+
+;========================================================================================
+;Enter in VRAM
+;----------------------------------------------------------------------------------------
+;Expect:        es = 0B800
+;Parameters:	di - shift from ds
+;Returns:
+;Destroys:	di
+;----------------------------------------------------------------------------------------
+
+EnterVR         proc
+
+                push ax
+                push dx
+
+                mov ax, di
+                mov dl, 160d
+                div dl          ;al - ostatok ot delenya na screen width
+
+                mov al, 160d
+                sub al, ah      ;now in ah is shift
+
+                mov ah, 0       ;need to add ax to di
+
+                add di, ax      ;shifted
+
+                pop dx
+                pop ax
+
+                ret
+EnterVR         endp
+
+;========================================================================================
+;Read Parameters from CMD
+;----------------------------------------------------------------------------------------
+;Expect:      si = 82h
+;Parameters:
+;Returns:
+;Destroys:	ax, bx, cx, dx, si
+;----------------------------------------------------------------------------------------
+
+ReadParameters  proc
+
+                call PrcDecPar
+                mov ax, bx      ;ax <- X
+
+                call PrcDecPar
+                mov dx, bx      ;dx <- Y
+
+                call PrcDecPar
+                mov cx, bx      ;cx <- H
+
+                call PrcDecPar  ;bx <- W
+
+                xchg bx, cx     ;bx <- H. cx <- W
+
+                ; X Y W H is set
+
+
+                push bx
+
+                call PrcHexPar
+                mov BoxClr, bl  ;now color of box is set by user
+
+                call PrcHexPar
+                mov ShdClr, bl  ;now color of shadow is set by user
+
+                call PrcDecPar  ;bx <- number of style
+
+                push ax
+                push dx         ;save before mul
+
+                cmp bx, 0       ;0 - for user's symbols
+                jne @@SkipUserStyleSet
+
+                call UserStyle
+                mov ShiftS, 0
+                jmp @@SkipStdStyleSet
+
+@@SkipUserStyleSet:
+                dec bx          ;bx (1) -> (0)
+                mov ax, 9d      ;need to find shift to style
+                mul bx
+                mov ShiftS, ax  ;ShiftS <- style number * 9
+
+@@SkipStdStyleSet:
+
+                pop dx
+                pop ax
+
+                pop bx
+
+                ;color and style is set
+
+;ret
+                mov di, offset Message  ;we will put symbols there
+                inc si                  ;skip first "
+
+@@Cycle:
+                movsb
+
+                cmp byte ptr ds:[si], "'"
+                jne @@Cycle
+
+                inc di
+                mov byte ptr es:[di], 00h        ;end symbol
+
+                ;now message is in Message address
+
+                ret
+
+ReadParameters  endp
+
+;========================================================================================
+;User Style Setting
+;========================================================================================
+;Expect:
+;Parameters:	si - shift from ds
+;Returns:
+;Destroys:	ax, dx, si
+;========================================================================================
+UserStyle proc
+
+        push cx
+
+        mov cx, offset ShiftS
+        add cx, 2
+        mov di, cx      ;set first style (where we will put symbols)
+
+        mov cx, 9       ;9 symobls of symbols
+        rep movsb
+
+        call SeekNoSpc  ;now si points to another parameter
+
+        pop cx
+
+        ret
+UserStyle endp
+;========================================================================================
+;Parces hex parameter
+;========================================================================================
+;Expect:
+;Parameters:	si - shift from ds
+;Returns:	bx - integer
+;Destroys:	bx, si
+;========================================================================================
+
+PrcHexPar       proc
+
+                std
+
+                call SeekSpc
+
+                push si         ;save si
+
+                sub si, 1       ; we need symbols before space
+                call PrcHex
+
+                pop si
+
+                call SeekNoSpc  ;now si points to another parameter
+
+                cld
+
+                ret
+
+PrcHexPar       endp
+
+;========================================================================================
+;Parces decimal int from line to bx
+;========================================================================================
+;Expect:
+;Parameters:	di - shift from ds
+;Returns:	bx - integer
+;Destroys:	bx, di
+;========================================================================================
+
+PrcHex		proc
+
+                push ax
+                push cx
+                push dx
+
+                xor bx, bx                      ;prepare ret value
+		mov cx, 1                       ;prepare mul coef
+
+@@Seek:         xor ax, ax                      ;ax <- 0
+                cmp byte ptr [si], ' '	;cmp to ' '	^.
+		je @@Rear			;	v
+
+		lodsb                           ;'0'-'A' -> al
+
+                cmp al, '9'                     ;check if digit less or eq '9'
+                jbe @@NoABCshift
+
+                sub al, 7d                      ;'A' -> '9' + 1
+
+@@NoABCshift:
+                sub al, '0'                     ;'3' -> 3 in al
+                mul cx
+
+                jo @@Error                      ;if overloaded
+
+                add bx, ax                      ;bx += digit * cx
+
+                mov ax, 16d
+                mul cx
+
+                mov cx, ax                      ;cx *= 16
+
+		jmp @@Seek			;		^
+
+@@Rear:
+                pop dx
+                pop cx
+                pop ax
+
+                ret				;	v.
+
+@@Error:        mov ax, 4c01
+                int 21
+
+PrcHex	        endp
+
+;========================================================================================
+;Parces parameter
+;========================================================================================
+;Expect:
+;Parameters:	si - shift from ds
+;Returns:	bx - integer
+;Destroys:	bx, si
+;========================================================================================
+
+PrcDecPar       proc
+
+                std
+
+                call SeekSpc
+
+                push si         ;save si
+
+                sub si, 1       ; we nedd symbols before space
+                call PrcDec
+
+                pop si
+
+                call SeekNoSpc  ;now si points to another parameter
+
+                cld
+
+                ret
+
+PrcDecPar       endp
+
+;========================================================================================
+;Parces decimal int from line to bx
+;========================================================================================
+;Expect:
+;Parameters:	di - shift from ds
+;Returns:	bx - integer
+;Destroys:	bx, di
+;========================================================================================
+
+PrcDec		proc
+
+                push ax
+                push cx
+                push dx
+
+                xor bx, bx                      ;prepare ret value
+		mov cx, 1                       ;prepare mul coef
+
+@@Seek:         xor ax, ax                      ;ax <- 0
+                cmp byte ptr [si], ' '	;cmp to ' '	^.
+		je @@Rear			;	v
+
+		lodsb                           ;'0'-'9' -> al
+
+
+                sub al, '0'                     ;'3' -> 3 in al
+                mul cx
+
+                jo @@Error                      ;if overloaded
+
+                add bx, ax                      ;bx += digit * cx
+
+                mov ax, 10d
+                mul cx
+
+                mov cx, ax                      ;cx *= 10
+
+		jmp @@Seek			;		^
+
+@@Rear:
+                pop dx
+                pop cx
+                pop ax
+
+                ret				;	v.
+
+@@Error:        mov ax, 4c01
+                int 21
+
+PrcDec	        endp
+
+;========================================================================================
+;Seek space or 0D in line
+;========================================================================================
+;Expect:        si = 82h
+;Parameters:	si - shift from ds
+;Returns:	-
+;Destroys:	si
+;========================================================================================
+SeekSpc	        proc
+
+@@Seek:		cmp byte ptr [si], ' '	;cmp to ' '	^.
+		je @@Rear			;	v
+
+                cmp byte ptr [si], 0Dh       ;cmp to 0D
+		je @@Rear			;	v
+
+		inc si  			;incr si
+		jmp @@Seek			;			^
+
+@@Rear:
+                ret				;	v.
+
+SeekSpc	        endp
+
+;========================================================================================
+;Seek no space in line
+;========================================================================================
+;Expect:        si = 82h
+;Parameters:	si - shift from ds
+;Returns:	-
+;Destroys:	si
+;========================================================================================
+SeekNoSpc       proc
+
+@@Seek:		cmp byte ptr [si], ' '	;cmp to ' '	^.
+		jne @@Rear			;if not space	v
+
+		inc si  			;incr si
+		jmp @@Seek			;			^
+
+@@Rear:
+                ret				;	v.
+
+SeekNoSpc       endp
+
