@@ -149,6 +149,149 @@ DrawFrame proc
 
 DrawFrame endp
 
+;========================================================================================
+;Draw Rectangle NO NEWLINE
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si], color in ShdClr
+;Parameters:	ax - X. dx - Y. cx - width. bx - high. si - ascii
+;Returns:	-
+;Destroys:	si, di, ax, dx, bx
+;----------------------------------------------------------------------------------------
+NNDrawRect	proc
+
+                mov ah, ShdClr  ;set color
+
+@@Loop:
+		lodsb                ;take ascii
+
+		push cx
+
+		rep stosw
+
+		pop cx
+
+		dec si		        ;restore  symbol
+
+		dec bx
+		cmp bx, 0
+		jne @@Loop
+
+		ret
+NNDrawRect	endp
+
+;========================================================================================
+;Draw Shadow NO NEWLINE
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si]
+;Parameters:	ax - X. dx - Y. cx - width. bx - high. si - ascii + color
+;Returns:	-
+;Destroys:	si, di, ax, dx, bx
+;----------------------------------------------------------------------------------------
+NNDrawShadow	proc
+
+		push si       ;save style
+
+		mov si, offset ShadowS      ;set shadow style
+
+                push ax
+                push dx
+                push bx
+                push cx
+
+                add ax, 2            ;x, y shift
+                add dx, 1            ;for shadow
+
+                call NNDrawRect        ;doing shadow
+
+                pop cx
+                pop bx
+                pop dx
+                pop ax
+
+		pop si		;restore style
+
+		ret
+NNDrawShadow	endp
+
+;========================================================================================
+;Draw Frame NO NEWLINE
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si], color in BoxClr
+;Parameters:	ax - X. dx - Y. cx - width. bx - high. si - ascii + color
+;Returns:	-
+;Destroys:	si, di, ax, dx, bx
+;----------------------------------------------------------------------------------------
+
+NNDrawFrame proc
+		;call NNDrawShadow
+
+		mov ah, BoxClr	;color
+
+                push di         ;save it for text
+
+		call NNPutBoxLine	;up line
+
+		sub bx, 2	;skip up and down lines
+
+                cmp bx, 0
+                je @@Skip       ;if no middle line
+
+@@Loop:
+		call NNPutBoxLine
+		sub si, 3	;restore middle symbols
+
+		dec bx
+		cmp bx, 0
+		jne @@Loop
+
+@@Skip:
+		add si, 3	;set end symbols
+
+		call NNPutBoxLine ;down line
+
+                ;frame and shadow is drown now we'll print text
+                pop di          ;restore di
+
+                Call DrawRegs
+
+                add di, 4       ;skip border and one more space
+                add di, 160d
+
+                ;call NewLine    ;we`ll skip first two rows
+                ;destination is set
+
+                mov si, offset Message
+                ;source is set
+
+@@Cycle:
+                cmp byte ptr ds:[si], '@'       ;newline symbol
+                je @@NewL
+
+                movsb           ;draw letter
+
+                inc di          ;skip color
+
+@@Fin:
+                cmp byte ptr ds:[si], 00h
+                jne @@Cycle
+
+		ret
+
+
+@@NewL:
+                call EnterVR
+                add di, DefX
+                add di, DefX
+
+                add di, 4
+
+                inc si
+
+                jmp @@Fin
+
+NNDrawFrame endp
+
+
 
 ;========================================================================================
 ;Coord to shift
@@ -183,7 +326,6 @@ CoordShift	endp
 ;Returns:
 ;Destroys:	di, bx
 ;----------------------------------------------------------------------------------------
-
 NewLine         proc
 
 		add di, 160d
@@ -248,6 +390,35 @@ PutBoxLine	proc
 
 		ret
 PutBoxLine	endp
+
+;========================================================================================
+;Put Box Line No NEWLINE
+;----------------------------------------------------------------------------------------
+;Expect:        es:[di], ds:[si], ah - color, cx - width
+;Parameters:	si - ptr to array of box-symbols
+;Returns:	-
+;Destroys:	si, di
+;----------------------------------------------------------------------------------------
+
+NNPutBoxLine	proc
+
+		lodsb				;from ds:[si] ascii of 1 -> al
+		stosw
+
+		lodsb				;ascii of 2 -> al
+
+		push cx				;save cx
+
+                sub cx, 2
+		rep stosw			;cycle (ax -> VRAM)
+
+		pop cx				;restore cx
+
+		lodsb				;ascii of 3 -> al
+		stosw
+
+		ret
+NNPutBoxLine	endp
 
 ;========================================================================================
 ;Space in VRAM
