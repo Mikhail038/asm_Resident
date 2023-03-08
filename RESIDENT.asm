@@ -298,7 +298,7 @@ DrawRegs endp
 
 include box.asi
 
-Flag            db 1
+Flag            db 0
 InitFlag        db 0
 
 ShiftS          dw 0001h
