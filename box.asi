@@ -252,11 +252,14 @@ NNDrawFrame proc
                 ;frame and shadow is drown now we'll print text
                 pop di          ;restore di
 
-                Call DrawRegs
-
                 add di, 4       ;skip border and one more space
-                add di, 160d
+                add di, cx
+                add di, cx      ;skip line
 
+
+                call DrawRegs
+
+                ret
                 ;call NewLine    ;we`ll skip first two rows
                 ;destination is set
 
